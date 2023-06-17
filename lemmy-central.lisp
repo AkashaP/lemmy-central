@@ -305,58 +305,6 @@ updateSyncingTimes()
 setInterval(updateSyncingTimes, 1800000);"))
                              nil))))
 
-
-
-;; (hunchentoot:define-easy-handler (root-route :uri "/") ()
-;;   "<!DOCTYPE html>
-;; <html>
-;; <head>
-;;     <meta charset=\"utf-8\" />
-;;     <meta name=\"viewport\" content=\"width=device-width, height=device-height\" />
-;;     <title>Server-Sent Events Demo</title>
-;;     <style type=\"text/css\">
-;;         body {
-;;             font-family: 'Open Sans', sans-serif;
-;;         }
-;;     </style>
-;; </head>
-;; <body>
-
-;;     <ul></ul>
-
-;;     <script>
-;;         (function() { \"use strict\";
-
-;;             var esOnce = new EventSource('/setup');
-;;             function fn(text, event) {
-;;                 try {
-;; console.log('ping');
-;;                     eval(text);
-;;                 } catch (e) {
-;;                     console.error(e, text, event);
-;;                 }
-;;             }
-;;             function fnOnce(text, event) {
-;; console.log('ping once');
-;;                 fn(text, event);
-;;                 esOnce.removeEventListener('event', fnOnce);
-;;             }
-;;             esOnce.addEventListener('event', fnOnce);
-
-;;             var es = new EventSource('/events');
-;;  //           es.addEventListener('open', function() {
-;;  //               console.log('Server connected :)');
-;;  //            });
-;;             es.addEventListener('event', fn);
-;;  //            es.addEventListener('error', function() {
-;;  //                console.error('Server unavailable :(');
-;;   //           });
-;;         })();
-;;     </script>
-;; </body>
-;; </html>
-;; ")
-
 (hunchentoot:define-easy-handler (root-route :uri "/") ()
   "<!DOCTYPE html>
 <html>
@@ -685,30 +633,6 @@ var SSE = function (url, options) {
     (labels ((send-js (js)
                (sse-server:send-event! output-stream "event" js)
                (force-output output-stream)))
-
-      
-      ;; (send-js
-      ;;  (drakma:http-request "https://cdn.tailwindcss.com"))
-
-      ;; send stylesheet
-      ;; (send-js
-      ;;  (eval `(ps:ps
-      ;;           ;; (defparameter body (document.query-selector 'body))
-      ;;           ;; (defparameter style (document.create-element 'style))
-      ;;           ;; (defparameter inner-text ,*main-css*)
-      ;;           ;; (setf (ps:@ style inner-text) inner-text)
-      ;;           ;; (document.head.insert-adjacent-h-t-m-l "beforeEnd" ,*main-css*)
-
-      ;;           (defparameter style (new -c-s-s-style-sheet))
-      ;;           (style.replace-sync ,*main-css*)
-
-      ;;           (setf (ps:@ document adopted-style-sheets) (array style))
-      ;;           ;; (setf (ps:@ style css-text) ,*main-css*)
-      ;;           )))
-
-      ;; add tailwind
-      ;; (send-js (drakma:http-request "https://cdn.tailwindcss.com"))
-      ;; (print "hello world")
       
       (loop repeat 2
             do (sleep 2)
@@ -738,48 +662,14 @@ var SSE = function (url, options) {
   (let ((counter 0)
         (output-stream (flex:make-flexi-stream (hunchentoot:send-headers)
                                                :external-format *utf-8*)))
-    ;; (labels ((send-js (js)
-    ;;            (sse-server:send-event! output-stream "event" js)
-    ;;            (force-output output-stream)))
-    ;;   (send-js
-    ;;    (drakma:http-request "https://cdn.tailwindcss.com"))
-    ;;   (send-js *sse-js*)
-
-    ;;   ;; send stylesheet
-    ;;   (send-js
-    ;;    (eval `(ps:ps
-    ;;             ;; (defparameter body (document.query-selector 'body))
-    ;;             ;; (defparameter style (document.create-element 'style))
-    ;;             ;; (defparameter inner-text ,*main-css*)
-    ;;             ;; (setf (ps:@ style inner-text) inner-text)
-    ;;             ;; (document.head.insert-adjacent-h-t-m-l "beforeEnd" ,*main-css*)
-
-    ;;             (defparameter style (new -c-s-s-style-sheet))
-    ;;             (style.replace-sync ,*main-css*)
-
-    ;;             (setf (ps:@ document adopted-style-sheets) (array style))
-    ;;             ;; (setf (ps:@ style css-text) ,*main-css*)
-    ;;             )))
-    ;;   )
     (named-readtables:in-readtable trivial-escapes:readtable)
     (write-string *sse-js* output-stream)
     (write-string (eval `(ps:ps
-                           ;; (defparameter body (document.query-selector 'body))
-                           ;; (defparameter style (document.create-element 'style))
-                           ;; (defparameter inner-text ,*main-css*)
-                           ;; (setf (ps:@ style inner-text) inner-text)
-                           ;; (document.head.insert-adjacent-h-t-m-l "beforeEnd" ,*main-css*)
-
                            (defparameter style (new -c-s-s-style-sheet))
                            (style.replace-sync ,*main-css*)
-
-                           (setf (ps:@ document adopted-style-sheets) (array style))
-                           ;; (setf (ps:@ style css-text) ,*main-css*)
-                           ))
+                           (setf (ps:@ document adopted-style-sheets) (array style))))
                   output-stream)
     (terpri output-stream)
     (force-output output-stream)))
-
-;; (nd.abt:with-abt (inject-feed-js (generate-feed-dom (poll-feed (list (first *all-instances*))))))
 
 (start)
