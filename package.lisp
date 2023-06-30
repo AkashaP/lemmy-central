@@ -25,6 +25,7 @@
    :with-unblocked))
 
 (in-package :lemmy-central)
+#+sbcl (import 'sb-ext:add-package-local-nickname)
 (add-package-local-nickname :nd :cl-naive-dom :lemmy-central)
 (add-package-local-nickname :json :com.inuoe.jzon :lemmy-central)
 (add-package-local-nickname :time :local-time :lemmy-central)
