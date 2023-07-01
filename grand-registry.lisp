@@ -93,16 +93,88 @@
 
 (defun thumbnailify (url output-dir)
   (let* ((filepath (concatenate 'string output-dir (string (gensym))))
-         (filepath-output (concatenate 'string output-dir (string (gensym)) ".webp")))
+         (filepath-output (concatenate 'string output-dir (string (gensym)) ".webp"))
+         success)
     (trivial-download:download url filepath)
     (unwind-protect
          (progn
            (with-standard-io-syntax
-             (print (format nil "converting ~a" url)))
+             (print (format nil "converting ~a, to tempfile ~a" url filepath-output)))
            (uiop:run-program (concatenate 'string "convert " filepath " -resize 200x200^ -gravity center -extent 200x200 " filepath-output))
-           (base64:string-to-base64-string (flex:octets-to-string (read-file filepath-output))))
+           (prog1
+               (base64:string-to-base64-string (flex:octets-to-string (read-file filepath-output)))
+             (setq success t)))
+      (unless success
+        (with-standard-io-syntax
+          (print (format nil "failed to convert ~a" url))))
       (delete-file filepath)
       (delete-file filepath-output))))
+
+;; (defun thumbnailify1 (url output-dir)
+;;   (let* ((filepath (concatenate 'string output-dir (string (gensym))))
+;;          (filepath-output (concatenate 'string output-dir (string (gensym)) ".webp"))
+;;          res)
+;;     (trivial-download:download url filepath)
+;;     ;; unwind-protect
+;;     (progn
+;;       (print (format nil "converting ~a, to tempfile ~a" url filepath-output))
+;;       (break "~a" res)
+;;       (uiop:run-program (concatenate 'string "convert " filepath " -resize 200x200^ -gravity center -extent 200x200 " filepath-output))
+;;       (setq res (base64:string-to-base64-string (flex:octets-to-string (read-file filepath-output)))))
+;;     (unless res
+;;       (print (format nil "failed to convert ~a" url)))
+;;     (delete-file filepath)
+;;     (delete-file filepath-output)
+;;     res))
+
+
+;; (defun ensure-cached-image1 (post)  
+;;   (alexandria:when-let ((image (gethash "url" post)))
+;;     (if (or (equalp image "")
+;;             (equalp image 'null)
+;;             (equalp image #'null)
+;;             (not (stringp image)))
+;;         (return-from ensure-cached-image1 nil))
+
+;;     (if (gethash image *image-cache*)
+;;         (gethash image *image-cache*)
+
+;;         (let ((img image))
+
+;;           (if (stringp img)
+;;               (if (and (not (ppcre:scan ".*\\.(png|jpg|jpeg|gif|webp).*" img))
+;;                        (stringp (gethash "thumbnail_url" post)))
+;;                   (if (ppcre:scan ".*\\.(png|jpg|jpeg|gif|webp).*" (gethash "thumbnail_url" post))
+;;                       (setf img (gethash "thumbnail_url" post)))))
+
+;;           (ignore-errors
+;;            (when (and (stringp img)
+;;                       (not (ppcre:scan ".*\\.(png|jpg|jpeg|gif|webp|mp4|webm|ogv).*" img)))
+;;              (let* ((link (drakma:http-request img))
+;;                     (html (html-parse:parse-html link)))
+;;                (labels ((recurse (list)
+;;                           (loop for elements in list
+;;                                 if (listp elements)
+;;                                   do (if (subsetp ;'(:META :PROPERTY "og:image" :CONTENT)
+;;                                           '(:META "og:image" :CONTENT) elements :test #'equalp)
+;;                                          (setq img (getf (cdr elements) :CONTENT))
+;;                                          (recurse elements)))))
+;;                  (recurse html)))))
+
+;;           (let (b64)
+;;             (if (ignore-errors (setq b64 (thumbnailify1 img "home/server1/tmpfs/")))
+;;                 (let ((id (bt2:atomic-integer-incf *image-ct*))
+;;                       (instance (make-instance 'image :anchor image
+;;                                                       :thumbnail-b64 b64
+;;                                                       :thumbnail nil)))
+;;                   (setf (gethash image *image-cache*) instance)
+;;                   (setf (gethash id *image-indices*) image)
+
+;;                   (alexandria:when-let ((old-image (gethash (- id 5000) *image-indices*)))
+;;                     (alexandria:when-let ((old (remhash old-image *image-indices*)))
+;;                       (remhash old *image-cache*)))
+
+;;                   instance)))))))
 
 (defun ensure-cached-image (post)  
   (alexandria:when-let ((image (gethash "url" post)))
@@ -131,7 +203,8 @@
                (labels ((recurse (list)
                           (loop for elements in list
                                 if (listp elements)
-                                  do (if (subsetp '(:META :PROPERTY "og:image" :CONTENT) elements :test #'equalp)
+                                  do (if (subsetp ;'(:META :PROPERTY "og:image" :CONTENT)
+                                          '(:META "og:image" :CONTENT) elements :test #'equalp)
                                          (setq img (getf (cdr elements) :CONTENT))
                                          (recurse elements)))))
                  (recurse html)))))
@@ -150,6 +223,80 @@
                       (remhash old *image-cache*)))
 
                   instance)))))))
+
+(defun ensure-cached-image (post)  
+  (alexandria:when-let ((image (gethash "url" post)))
+    (if (or (equalp image "")
+            (equalp image 'null)
+            (equalp image #'null)
+            (not (stringp image)))
+        (return-from ensure-cached-image nil))
+    
+    (if (gethash image *image-cache*)
+        (gethash image *image-cache*)
+        
+        (let ((img image))
+
+          (if (stringp img)
+              (if (and (not (ppcre:scan ".*\\.(png|jpg|jpeg|gif|webp).*" img))
+                       (stringp (gethash "thumbnail_url" post)))
+                  (if (ppcre:scan ".*\\.(png|jpg|jpeg|gif|webp).*" (gethash "thumbnail_url" post))
+                      (setf img (gethash "thumbnail_url" post)))))
+          
+          (ignore-errors
+           (when (and (stringp img)
+                      (not (ppcre:scan ".*\\.(png|jpg|jpeg|gif|webp|mp4|webm|ogv).*" img)))
+             (let* ((link (drakma:http-request img))
+                    (html (html-parse:parse-html link)))
+               (labels ((recurse (list)
+                          (loop for elements in list
+                                if (listp elements)
+                                  do (if (subsetp ;'(:META :PROPERTY "og:image" :CONTENT)
+                                          '(:META "og:image" :CONTENT) elements :test #'equalp)
+                                         (setq img (getf (cdr elements) :CONTENT))
+                                         (recurse elements)))))
+                 (recurse html)))))
+          
+          (let (b64)
+            (if (ignore-errors (setq b64 (thumbnailify img "home/server1/tmpfs/")))
+                (let ((id (bt2:atomic-integer-incf *image-ct*))
+                      (instance (make-instance 'image :anchor image
+                                                      :thumbnail-b64 b64
+                                                      :thumbnail nil)))
+                  (setf (gethash image *image-cache*) instance)
+                  (setf (gethash id *image-indices*) image)
+                  
+                  (alexandria:when-let ((old-image (gethash (- id 5000) *image-indices*)))
+                    (alexandria:when-let ((old (remhash old-image *image-indices*)))
+                      (remhash old *image-cache*)))
+
+                  instance)
+                (progn
+                  (ignore-errors
+                   (when (stringp img)
+                     (let* ((link (drakma:http-request img))
+                            (html (html-parse:parse-html link)))
+                       (labels ((recurse (list)
+                                  (loop for elements in list
+                                        if (listp elements)
+                                          do (if (subsetp ;'(:META :PROPERTY "og:image" :CONTENT)
+                                                  '(:META "og:image" :CONTENT) elements :test #'equalp)
+                                                 (setq img (getf (cdr elements) :CONTENT))
+                                                 (recurse elements)))))
+                         (recurse html)))))
+                  (if (ignore-errors (setq b64 (thumbnailify img "home/server1/tmpfs/")) b64)
+                      (let ((id (bt2:atomic-integer-incf *image-ct*))
+                            (instance (make-instance 'image :anchor image
+                                                            :thumbnail-b64 b64
+                                                            :thumbnail nil)))
+                        (setf (gethash image *image-cache*) instance)
+                        (setf (gethash id *image-indices*) image)
+                        
+                        (alexandria:when-let ((old-image (gethash (- id 5000) *image-indices*)))
+                          (alexandria:when-let ((old (remhash old-image *image-indices*)))
+                            (remhash old *image-cache*)))
+
+                        instance)))))))))
 
 (defun uncache-image-by-url (url)
   (remhash url *image-cache*)
@@ -372,9 +519,12 @@
    :name "long-instance-register"))
 
 (defun terminate-long-instance-register ()
-  (loop for thread in (bt2:all-threads)
+  (loop for thread in (bt2:all-threads) 
         if (equalp "long-instance-register" (bt2:thread-name thread))
-          do (bt2:destroy-thread thread)))
+          do (bt2:destroy-thread thread)
+             ;; (sb-thread:interrupt-thread thread
+             ;;                             (lambda () (sb-thread:abort-thread :allow-exit t)))
+        ))
 
 ;; End all instance scrape
 
@@ -437,12 +587,12 @@
   (loop for posts across (aref (posts instance) 0)
         for post = (gethash "post" posts) 
         do (let ((post post))
-             (bt2:make-thread
+             (sb-thread:make-thread
               (lambda ()
                 (ensure-cached-image post))))))
 
 (defun per-instance-register ()
-  (bt2:make-thread
+  (sb-thread:make-thread
    (lambda ()
      (with-standard-io-syntax
        (loop with previous-threads = (make-hash-table :test #'equalp :synchronized t)
@@ -464,8 +614,9 @@
                               (let ((id id)
                                     (instance instance))
                                 (setf (gethash id previous-threads)
-                                      (bt2:make-thread
+                                      (sb-thread:make-thread
                                        (lambda ()
+                                         ;; (sb-ext:disable-debugger)
                                          (with-standard-io-syntax
                                            (symbol-macrolet ((anchor (anchor instance))
                                                              (image (image instance))
@@ -550,15 +701,43 @@
           do (bt2:destroy-thread thread)))
 
 
+(defun set-debugger-per-instance-polling (state)
+  (loop for thread in (bt2:all-threads)
+        if (or (search "per instance 0-page poll for " (bt2:thread-name thread))
+               (search "register per instances" (bt2:thread-name thread)))
+          do (bt2:interrupt-thread
+              thread
+              (lambda () (if state
+                        (sb-ext:enable-debugger)
+                        (sb-ext:disable-debugger))))))
+
+(defun set-debugger-long-instance-register (state)
+  (loop for thread in (bt2:all-threads)
+        if (equalp "long-instance-register" (bt2:thread-name thread))
+          do (bt2:interrupt-thread
+              thread 
+              (lambda () (if state
+                        (sb-ext:enable-debugger)
+                        (sb-ext:disable-debugger))))))
 
 
 
 
 
 (defparameter *main-css* "
-        body {
-            font-family: sans-serif;
+        * {
+            font-family: system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue','Noto Sans','Liberation Sans',Arial,sans-serif,'Apple Color Emoji','Segoe UI Emoji','Segoe UI Symbol','Noto Color Emoji',sans-serif;
         }
+
+body {
+  display: flex;
+  justify-content: center;
+}
+
+.body {
+  flex: 0 0 88%;
+  margin: auto;
+}
 
 .post {
 display: table;
@@ -577,9 +756,9 @@ display: table-row;
 .grid-view.post-container {
     display: inline-flex;
     flex-direction: column;
-    min-height: 400px;
     margin-top: 1rem;
     margin-bottom: 1rem;
+    min-height: 350px;
 }
 
 .post-details.grid-view {
@@ -587,11 +766,15 @@ display: table-row;
     flex-direction: column;
 }
 
+.post-content.grid-view {
+    flex: 1 0 auto;
+}
+
 .grid-view * {
     max-width: 200px;
 }
 
-.grid-view.post-content {
+.post-content {
     display: flex;
     flex-direction: column;
 }
@@ -601,14 +784,14 @@ display: table-row;
                                           padding: 0.75rem;
                                           padding-top: 0.2rem;
                                           padding-bottom: 0.2rem;
-                                          background-color: #f6f8fa;
+                                          /* background-color: #f6f8fa; */
                                           border: 1px solid #e1e4e8;
                                           border-radius: 0.5rem;
-                                          transition: background-color 0.3s ease;
+                                          transition: outline 0.3s ease;
                                           }
 
                                           .post-container:hover {
-                                          background-color: #e9f0f5;
+                                          outline: 3px solid #e9f0f5;
                                           }
 
                                           .post-container a {
@@ -617,11 +800,12 @@ display: table-row;
                                           }
 
   .post-container .post-body {
-    font-size: 0.65rem;
+    font-size: 0.85rem;
+    flex: 1 0 auto;
   }
 
                                           .post-container h3 {
-                                          font-size: 0.75rem;
+                                          font-size: 0.9rem;
                                           margin: 0.25rem 0;
                                           font-weight: 600;
                                           line-height: 1;
@@ -639,7 +823,7 @@ display: table-row;
                                           }
 
                                           .post-container .post-body {
-                                          color: #24292e;
+                                          /* color: #24292e; */
                                           line-height: 1;
                                           }
 
@@ -649,10 +833,12 @@ display: table-row;
       overflow: hidden;
       cursor: pointer;
       transition: all 0.3s ease;
-      width: 200px; /* Adjust the desired width here */
-      height: 200px; /* Adjust the desired height here */
+      width: 150px; /* Adjust the desired width here */
+      height: 150px; /* Adjust the desired height here */
       border-radius: 0.5rem;
       box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      flex: 0 0 auto;
+      align-self: center;
     }
     
   .thumbnail img {
@@ -666,7 +852,8 @@ display: table-row;
       box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
     }")
 
-(setq hunchentoot::*catch-errors-p* nil)
+;; NOTE Set this to NIL to enable debugging
+(setq hunchentoot::*catch-errors-p* t)
 
 (defun hunchentoot::start-session ()
   "Returns the current SESSION object. If there is no current session,
@@ -702,7 +889,7 @@ case the function will also send a session cookie to the browser."
 <head>
     <meta charset=\"utf-8\" />
     <meta name=\"viewport\" content=\"width=device-width, height=device-height\" />
-    <title>Server-Sent Events Demo</title>
+    <title>Lemmy central</title>
 </head>
 <body>
 
@@ -859,14 +1046,22 @@ case the function will also send a session cookie to the browser."
                      
 
                      ;; Convert image to base64 if possible
-                     (when (stringp img)
-                       (handler-case (let ((img-instance (ensure-cached-image (gethash "post" post))))
-                                       (when (typep img-instance 'image)
-                                         (setq img (concatenate 'string "data:image/webp;base64, " (thumbnail-b64 img-instance)))))
-                         (error () (setq img nil))))
-                     
+                     ;; (when (stringp img)
+                     ;;   (handler-case (let ((img-instance (ensure-cached-image (gethash "post" post))))
+                     ;;                   (when (typep img-instance 'image)
+                     ;;                     (setq img (concatenate 'string "data:image/webp;base64, " (thumbnail-b64 img-instance)))))
+                     ;;     (error () (setq img nil))))
+
+                     ;; (let ((cached (gethash (gethash "post" post) *image-cache*)))
+                     ;;   (if cached
+                     ;;       (setq img cached)))
+                     ;; (break "~a" img)
                      (if (stringp img)
                          (setq img (concatenate 'string img)))
+                     
+                     (let ((cached (gethash img *image-cache*)))
+                       (if (typep cached 'image)
+                           (setq img (concatenate 'string "data:image/webm;base64," (thumbnail-b64 cached)))))
                      ;; (when img (break "~a" img))
                      
                      (case post-type 
@@ -875,20 +1070,18 @@ case the function will also send a session cookie to the browser."
                           (:div :class "post-container grid-view" 
                                 :onclick (concatenate 'string "location.href='" link "'")
                                 :style "cursor: pointer;"
-
-                                ;; (break "~a" img)
-                                ;; (print post)
                                 
                                 (:div :class "post-content grid-view"
                                       (:a :href (concatenate 'string link)
-                                          (:h3 (str:shorten 80 (gethash "name" (gethash "post" post)))))
+                                          (:h3 (str:pad 80 (str:shorten 80 (gethash "name" (gethash "post" post))) :pad-char (elt " " 0))))
                                       (if (stringp img)
                                           (:span :class "thumbnail" 
                                                  (:img :src (concatenate 'string img)
+                                                       ;; :width "200" :height "200"
                                                        :onerror "this.onerror=null;this.parentElement.style.display = 'none';"))) 
                                       (:div :class "post-body" post-body)
-                                      (:div :class "post-details grid-view" "in" (:a :href (concatenate 'string (gethash "actor_id" (gethash "community" post)))
-                                                                                     (concatenate 'string  (gethash "name" (gethash "community" post))))
+                                      (:div :class "post-details grid-view post-footer" "in" (:a :href (concatenate 'string (gethash "actor_id" (gethash "community" post)))
+                                                                                                 (concatenate 'string  (gethash "name" (gethash "community" post))))
                                             (:div
                                              (:span "upvotes:" (gethash "upvotes" (gethash "counts" post)))
                                              (:span "downvotes:" (gethash "downvotes" (gethash "counts" post)))) 
@@ -907,14 +1100,15 @@ case the function will also send a session cookie to the browser."
                                       :style "cursor: pointer;"
                                       (if (stringp img)
                                           (:span :class "thumbnail" 
-                                                 (:img :src (concatenate 'string img)
+                                                 (:img :src (concatenate 'string img) 
+                                                       ;; :width "200" :height "200"
                                                        :onerror "this.onerror=null;this.parentElement.style.display = 'none';"))) 
                                       (:div :class (concatenate 'string "post-content list-view")
                                             (:a :href (concatenate 'string (concatenate 'string link))
                                                 (:h3 (gethash "name" (gethash "post" post)))) 
                                             (:div :class "post-body" post-body)
-                                            (:div :class "post-details list-view" "in" (:a :href (concatenate 'string (gethash "actor_id" (gethash "community" post)))
-                                                                                           (concatenate 'string (gethash "name" (gethash "community" post))))
+                                            (:div :class "post-details list-view post-footer" "in" (:a :href (concatenate 'string (gethash "actor_id" (gethash "community" post)))
+                                                                                                       (concatenate 'string (gethash "name" (gethash "community" post))))
                                                   (:span "&nbsp;")
                                                   (:span "published: " (time:format-timestring nil (time:parse-timestring (gethash "published" (gethash "post" post)))))
                                                   (:span "&nbsp;")
@@ -1032,8 +1226,9 @@ case the function will also send a session cookie to the browser."
                                                         (str:replace-all "`" ""
                                                                          (nd.abt:with-abt
                                                                            (nd:with-dom
-                                                                             (:div
-                                                                              (generate-feed-dom (generate-feed (alexandria:hash-table-values instances)))))))
+                                                                             (:div :class "body"
+                                                                                   (generate-feed-dom (generate-feed (alexandria:hash-table-values instances))
+                                                                                                      :max-posts 86)))))
                                                         "`;"
                                                         "
 let container = document.querySelector('.post-container').parentElement;
@@ -1131,6 +1326,7 @@ window.addEventListener('resize', handleResize);
 
   (setq *server* (make-instance 'super-acceptor :port 6789))
   (hunchentoot:start *server*)
+  ;; (set-debugger-long-instance-register nil)
 
   ;; long and per poll
   t)
